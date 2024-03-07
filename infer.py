@@ -25,6 +25,7 @@ from gdnet import GDNet
 device_ids = [0]
 torch.cuda.set_device(device_ids[0])
 
+print(f"infer starts\n")
 ckpt_path = './ckpt'
 exp_name = 'GDNet'
 args = {
@@ -48,9 +49,14 @@ to_pil = transforms.ToPILImage()
 
 
 def main():
-    net = GDNet().cuda(device_ids[0])
+    print(f"enter main function\n")
+    print(f"devcie id : {device_ids[0]}")
+    # net = GDNet().cuda(device_ids[0])
+    net = GDNet()
+
 
     if len(args['snapshot']) > 0:
+        print(f"checking snapshots\n")
         print('Load snapshot {} for testing'.format(args['snapshot']))
         net.load_state_dict(torch.load(os.path.join(ckpt_path, exp_name, args['snapshot'] + '.pth')))
         print('Load {} succeed!'.format(os.path.join(ckpt_path, exp_name, args['snapshot'] + '.pth')))
@@ -59,8 +65,10 @@ def main():
     with torch.no_grad():
         for name, root in to_test.items():
             img_list = [img_name for img_name in os.listdir(os.path.join(root, 'image'))]
+            img_list.sort()
             start = time.time()
             for idx, img_name in enumerate(img_list):
+                print(f"image {img_name}")
                 print('predicting for {}: {:>4d} / {}'.format(name, idx + 1, len(img_list)))
                 check_mkdir(os.path.join(gdd_results_root, '%s_%s' % (exp_name, args['snapshot'])))
                 img = Image.open(os.path.join(root, 'image', img_name))
@@ -68,7 +76,8 @@ def main():
                     img = img.convert('RGB')
                     print("{} is a gray image.".format(name))
                 w, h = img.size
-                img_var = Variable(img_transform(img).unsqueeze(0)).cuda(device_ids[0])
+                # img_var = Variable(img_transform(img).unsqueeze(0)).cuda(device_ids[0])
+                img_var = Variable(img_transform(img).unsqueeze(0))
                 f1, f2, f3 = net(img_var)
                 f1 = f1.data.squeeze(0).cpu()
                 f2 = f2.data.squeeze(0).cpu()
