@@ -26,6 +26,8 @@ from image_listener import ImageListener
 import rospy
 import cv2
 
+from grasp_utils import compute_xyz
+
 class Inference:
     def __init__(self) -> None:
         
@@ -58,7 +60,7 @@ class Inference:
 
     def main(self):
         rospy.init_node("img_listen_n_infer")
-        self.listener = ImageListener("Gazebo")
+        self.listener = ImageListener("Fetch")
         if len(self.args['snapshot']) > 0:
             print(f"checking snapshots\n")
             print('Load snapshot {} for testing'.format(self.args['snapshot']))
@@ -67,7 +69,8 @@ class Inference:
             self.net.eval()
             with torch.no_grad():
                 while not rospy.is_shutdown():
-                    rgb, depth, _, _ = self.listener.get_data()
+                    rgb, depth, RT_camera, RT_laser = self.listener.get_data()
+                    print(f"RT laser {RT_laser}")
                     rgb = Image.fromarray(rgb)
                     w,h = rgb.size
                     img_var = Variable(self.img_transform(rgb).unsqueeze(0))
@@ -80,6 +83,22 @@ class Inference:
                     non_z_depth = np.where(depth > 0)
                     f3[non_z_depth] = 0
                     f3 = cv2.morphologyEx(f3, cv2.MORPH_CLOSE, self.kernel)
+                    #assumew we have the updated depth image
+                    xyz_image = compute_xyz(depth, self.listener.fx,self.listener.fy,self.listener.px,self.listener.py, h, w )
+                    # print(xyz_image.shape)
+                    xyz_array = xyz_image.reshape((-1, 3))
+                    # print(xyz_array.shape)
+                    xyz_base = np.matmul(RT_camera[:3, :3], xyz_array.T) + RT_camera[:3, 3].reshape(3, 1)
+                    xyz_base = xyz_base.reshape((-1, 3))
+
+                    xyz_base = xyz_base[(xyz_base[:,2]<0.5) & (xyz_base[:,2]>0.3)]
+                    xyz_base = xyz_base[0:xyz_base.size:20]
+                    # done with points in base frame
+                    # print(xyz_base.shape)
+                    xyz_laser = np.matmul(RT_laser[:3,:3], xyz_base.T) + RT_laser[:3,3].reshape(3,1)
+                    # xyz_laser = xyz_laser.T.reshape((h, w, 3))
+                    xyz_laser = xyz_laser.T.reshape((-1,3))
+                    # done with points in laser frame
                     rospy.sleep(1)
 
 
