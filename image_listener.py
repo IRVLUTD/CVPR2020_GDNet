@@ -90,11 +90,13 @@ class ImageListener:
     
         # get camera pose in base
         try:
-             print("callback")
+            #  print("callback")
              trans, rot = self.tf_listener.lookupTransform(self.base_frame, self.camera_frame, rospy.Time(0))
              RT_camera = ros_qt_to_rt(rot, trans)
-             trans_l, rot_l = self.tf_listener.lookupTransform(self.base_frame, 'laser_link', rospy.Time(0))
-             RT_laser = ros_qt_to_rt(rot_l, trans_l)
+            #  print(f"cam trans {trans}, cam rotation {rot}\n")
+             self.trans_l, self.rot_l = self.tf_listener.lookupTransform(self.base_frame, 'laser_link', rospy.Time(0))
+            #  print(f"laser trans {trans_l}, laser rotation {rot_l}\n")
+             RT_laser = ros_qt_to_rt(self.rot_l, self.trans_l)
         except (tf2_ros.LookupException,
                 tf2_ros.ConnectivityException,
                 tf2_ros.ExtrapolationException) as e:
@@ -129,7 +131,7 @@ class ImageListener:
             self.RT_laser = RT_laser
 
     def callback_laserscan(self, scan):
-        print("scan received")
+        # print("scan received")
         self.revised_scan = scan
         self.laserscan = {
         'angle_min': scan.angle_min,
@@ -153,12 +155,13 @@ class ImageListener:
             rgb_frame_id = self.rgb_frame_id
             rgb_frame_stamp = self.rgb_frame_stamp
             RT_camera = self.RT_camera.copy()
+            RT_laser = self.RT_laser.copy()
 
-        xyz_image = compute_xyz(depth_image, self.fx, self.fy, self.px, self.py, self.height, self.width)
-        xyz_array = xyz_image.reshape((-1, 3))
-        xyz_base = np.matmul(RT_camera[:3, :3], xyz_array.T) + RT_camera[:3, 3].reshape(3, 1)
-        xyz_base = xyz_base.T.reshape((self.height, self.width, 3))
-        return im_color, depth_image, xyz_image, xyz_base, RT_camera, self.intrinsics
+        # xyz_image = compute_xyz(depth_image, self.fx, self.fy, self.px, self.py, self.height, self.width)
+        # xyz_array = xyz_image.reshape((-1, 3))
+        # xyz_base = np.matmul(RT_camera[:3, :3], xyz_array.T) + RT_camera[:3, 3].reshape(3, 1)
+        # xyz_base = xyz_base.T.reshape((self.height, self.width, 3))
+        return im_color, depth_image, RT_camera, RT_laser
 
 
 
