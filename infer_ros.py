@@ -65,7 +65,7 @@ class Inference:
         rospy.init_node("img_listen_n_infer")
         self.listener = ImageListener("Fetch")
         rospy.sleep(2)
-        self.unit_lidar_vector = self.listener.get_unit_lidar_vector()
+        self.unit_lidar_vector, range, min_dist = self.listener.get_unit_lidar_vector()
         self.lidar_header = Header()
         if len(self.args['snapshot']) > 0:
             print(f"checking snapshots\n")
@@ -105,9 +105,12 @@ class Inference:
                     xyz_laser = np.matmul(RT_laser[:3,:3], xyz_base.T) + RT_laser[:3,3].reshape(3,1)
                     # xyz_laser = xyz_laser.T.reshape((h, w, 3))
                     xyz_laser = xyz_laser.T.reshape((-1,3))
-
-                    lidar_pc = self.unit_lidar_vector * self.listener.laserscan['ranges'][0]
+                    ranges = self.listener.laserscan['ranges']
+                    ranges = ranges[:, np.newaxis]
+                    lidar_pc = self.unit_lidar_vector * ranges
                     xyz_laser[:,2] = 0
+
+                    print(f"lidar pc {lidar_pc.shape}\n")
 
                     lidar_pc = np.concatenate((lidar_pc, xyz_laser), axis=0)
                     self.lidar_header.stamp = rospy.Time.now()
