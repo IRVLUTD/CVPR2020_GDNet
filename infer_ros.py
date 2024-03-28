@@ -27,6 +27,9 @@ import rospy
 import cv2
 
 from grasp_utils import compute_xyz
+from ros_utils import assign_depth_to_segments
+from sensor_msgs import point_cloud2 as pc2
+from std_msgs.msg import Header
 
 class Inference:
     def __init__(self) -> None:
@@ -61,6 +64,9 @@ class Inference:
     def main(self):
         rospy.init_node("img_listen_n_infer")
         self.listener = ImageListener("Fetch")
+        rospy.sleep(2)
+        self.unit_lidar_vector = self.listener.get_unit_lidar_vector()
+        self.lidar_header = Header()
         if len(self.args['snapshot']) > 0:
             print(f"checking snapshots\n")
             print('Load snapshot {} for testing'.format(self.args['snapshot']))
@@ -83,6 +89,7 @@ class Inference:
                     non_z_depth = np.where(depth > 0)
                     f3[non_z_depth] = 0
                     f3 = cv2.morphologyEx(f3, cv2.MORPH_CLOSE, self.kernel)
+                    depth = assign_depth_to_segments(f3, depth)
                     #assumew we have the updated depth image
                     xyz_image = compute_xyz(depth, self.listener.fx,self.listener.fy,self.listener.px,self.listener.py, h, w )
                     # print(xyz_image.shape)
@@ -92,13 +99,24 @@ class Inference:
                     xyz_base = xyz_base.reshape((-1, 3))
 
                     xyz_base = xyz_base[(xyz_base[:,2]<0.5) & (xyz_base[:,2]>0.3)]
-                    xyz_base = xyz_base[0:xyz_base.size:20]
+                    xyz_base = xyz_base[0:xyz_base.size:30]
                     # done with points in base frame
                     # print(xyz_base.shape)
                     xyz_laser = np.matmul(RT_laser[:3,:3], xyz_base.T) + RT_laser[:3,3].reshape(3,1)
                     # xyz_laser = xyz_laser.T.reshape((h, w, 3))
                     xyz_laser = xyz_laser.T.reshape((-1,3))
+
+                    lidar_pc = self.unit_lidar_vector * self.listener.laserscan['ranges'][0]
+                    xyz_laser[:,2] = 0
+
+                    lidar_pc = np.concatenate((lidar_pc, xyz_laser), axis=0)
+                    self.lidar_header.stamp = rospy.Time.now()
+                    self.lidar_header.frame_id = "laser_link"
+                    lidar_message = pc2.create_cloud_xyz32(self.lidar_header, lidar_pc)
+                    self.listener.lidar_pub.publish(lidar_message)
+
                     # done with points in laser frame
+                    print(f"one iteration completed")
                     rospy.sleep(1)
 
 
