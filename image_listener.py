@@ -16,7 +16,7 @@ import tf2_ros
 import message_filters
 from tf.transformations import quaternion_matrix
 from std_msgs.msg import Header
-from sensor_msgs.msg import Image, CameraInfo, PointCloud, LaserScan
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2, LaserScan
 from geometry_msgs.msg import Pose, PoseArray, Point
 from cv_bridge import CvBridge, CvBridgeError
 from ros_utils import ros_qt_to_rt, ros_pose_to_rt
@@ -51,6 +51,7 @@ class ImageListener:
             self.camera_frame = 'head_camera_rgb_optical_frame'
             self.target_frame = self.base_frame
             rospy.Subscriber("/base_scan", LaserScan, self.callback_laserscan)
+            self.lidar_pub = rospy.Publisher("/lidar_pc", PointCloud2, queue_size=10)
 
         elif camera == 'Realsense':
             # use RealSense camera
@@ -144,7 +145,23 @@ class ImageListener:
         'ranges': np.array(scan.ranges),
         'intensities': np.array(scan.intensities),
         }
+    def get_unit_lidar_vector(self):
+        with lock:
+            print(f"self laserscan {self.laserscan}")
+            laser_linear_range = self.laserscan['range_max'] - self.laserscan['range_min']
+            laser_angular_range = self.laserscan['angle_max']-self.laserscan['angle_min']
+            n_horizontal_rays = laser_angular_range/self.laserscan['angle_increment']
 
+            angle = np.arange(
+                self.laserscan['angle_min'],
+                self.laserscan['angle_max'],
+                laser_angular_range / n_horizontal_rays,
+            )
+            print(f"angle {angle}")
+            unit_vector_laser = np.array([[np.cos(ang), np.sin(ang), 0.0] for ang in angle])
+            print(f"unit vector shape {unit_vector_laser.shape}")
+        return unit_vector_laser
+        
     def get_data(self):
 
         with lock:
