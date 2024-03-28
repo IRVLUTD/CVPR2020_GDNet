@@ -25,10 +25,11 @@ from gdnet import GDNet
 from image_listener import ImageListener
 import rospy
 import cv2
-
+import ros_numpy
 from grasp_utils import compute_xyz
 from ros_utils import assign_depth_to_segments
 from sensor_msgs import point_cloud2 as pc2
+from sensor_msgs.msg import Image as Img
 from std_msgs.msg import Header
 
 class Inference:
@@ -64,6 +65,8 @@ class Inference:
     def main(self):
         rospy.init_node("img_listen_n_infer")
         self.listener = ImageListener("Fetch")
+        self.segm_imgpub = rospy.Publisher("/segmented_img", Img, queue_size=5)
+
         rospy.sleep(2)
         self.unit_lidar_vector, range, min_dist = self.listener.get_unit_lidar_vector()
         self.lidar_header = Header()
@@ -76,7 +79,7 @@ class Inference:
             with torch.no_grad():
                 while not rospy.is_shutdown():
                     rgb, depth, RT_camera, RT_laser = self.listener.get_data()
-                    print(f"RT laser {RT_laser}")
+                    # print(f"RT laser {RT_laser}")
                     rgb = Image.fromarray(rgb)
                     w,h = rgb.size
                     img_var = Variable(self.img_transform(rgb).unsqueeze(0))
@@ -85,11 +88,13 @@ class Inference:
                     f3 = np.array(transforms.Resize((h, w))(self.to_pil(f3)))
                     if self.args['crf']:
                         f3 = crf_refine(np.array(rgb.convert('RGB')), f3)
-                    print(f"type of f3 {type(f3)}")
+                    # print(f"type of f3 {type(f3)}")
                     non_z_depth = np.where(depth > 0)
                     f3[non_z_depth] = 0
                     f3 = cv2.morphologyEx(f3, cv2.MORPH_CLOSE, self.kernel)
                     depth = assign_depth_to_segments(f3, depth)
+                    f4 = ros_numpy.msgify(Img, f3,encoding='mono8')
+                    self.segm_imgpub.publish(f4)
                     #assumew we have the updated depth image
                     xyz_image = compute_xyz(depth, self.listener.fx,self.listener.fy,self.listener.px,self.listener.py, h, w )
                     # print(xyz_image.shape)
@@ -110,7 +115,7 @@ class Inference:
                     lidar_pc = self.unit_lidar_vector * ranges
                     xyz_laser[:,2] = 0
 
-                    print(f"lidar pc {lidar_pc.shape}\n")
+                    # print(f"lidar pc {lidar_pc.shape}\n")
 
                     lidar_pc = np.concatenate((lidar_pc, xyz_laser), axis=0)
                     self.lidar_header.stamp = rospy.Time.now()
@@ -119,8 +124,8 @@ class Inference:
                     self.listener.lidar_pub.publish(lidar_message)
 
                     # done with points in laser frame
-                    print(f"one iteration completed")
-                    rospy.sleep(1)
+                    # print(f"one iteration completed")
+                    # rospy.sleep(1)
 
 
 if __name__ == '__main__':
