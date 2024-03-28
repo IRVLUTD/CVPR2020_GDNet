@@ -160,7 +160,7 @@ class ImageListener:
             print(f"angle {angle}")
             unit_vector_laser = np.array([[np.cos(ang), np.sin(ang), 0.0] for ang in angle])
             print(f"unit vector shape {unit_vector_laser.shape}")
-        return unit_vector_laser
+        return unit_vector_laser, laser_linear_range, self.laserscan['range_min']
         
     def get_data(self):
 
