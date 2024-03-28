@@ -5,7 +5,8 @@ import tf.transformations as tra
 from visualization_msgs.msg import MarkerArray, Marker
 from geometry_msgs.msg import Pose, PoseArray, Point, Quaternion
 from transforms3d.quaternions import mat2quat, quat2mat
-
+from scipy.spatial import cKDTree
+from scipy.ndimage import label
 
 def convert_rosqt_to_standard(pose_ros):
     """Converts (posn, x,y,z,w) quat to (posn, w,x,y,z) quat"""
@@ -226,3 +227,27 @@ def publish_grasps(publisher, frame_id, grasps, color_alpha, scores=None):
 
     # rospy.loginfo('markers length {}'.format(len(markers.markers)))
     publisher.publish(markers)
+
+def find_nearest_nonzero_idx_for_segment(a, segment):
+    """ Find the nearest nonzero element in array `a` for the whole segment. """
+    nonzero = np.argwhere(a)
+    nonzero_tree = cKDTree(nonzero)
+    segment_coords = np.argwhere(segment)
+    distance, location = nonzero_tree.query(segment_coords)
+    nearest = np.mean(nonzero[location], axis=0).astype(int)  # Average location
+    return nearest
+
+def assign_depth_to_segments(bw_image, depth_image):
+    # Label each connected component (segment) in the bw image
+    labeled_array, num_features = label(bw_image)
+
+    new_depth_image = np.zeros_like(depth_image)
+
+    for segment_num in range(1, num_features + 1):
+        segment = labeled_array == segment_num
+        nearest_black_idx = find_nearest_nonzero_idx_for_segment(depth_image, segment)
+        if depth_image[nearest_black_idx[0], nearest_black_idx[1]] != 0:
+            new_depth_image[segment] = depth_image[nearest_black_idx[0], nearest_black_idx[1]]
+
+    return new_depth_image
+
