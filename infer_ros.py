@@ -83,7 +83,6 @@ class Inference:
             with torch.no_grad():
                 while not rospy.is_shutdown():
                     rgb, depth, RT_camera, RT_laser = self.listener.get_data()
-                    # print(f"RT laser {RT_laser}")
                     rgb = Image.fromarray(rgb)
                     w,h = rgb.size
                     ######################
@@ -98,42 +97,53 @@ class Inference:
                     f3 = np.array(transforms.Resize((h, w))(self.to_pil(f3)))
                     if self.args['crf']:
                         f3 = crf_refine(np.array(rgb.convert('RGB')), f3)
-                    # print(f"type of f3 {type(f3)}")
-                    non_z_depth = np.where(depth > 0)
-                    f3[non_z_depth] = 0
-                    f3 = cv2.morphologyEx(f3, cv2.MORPH_CLOSE, self.kernel)
-                    depth = assign_depth_to_segments(f3, depth)
-                    f4 = ros_numpy.msgify(Img, f3,encoding='mono8')
-                    self.segm_imgpub.publish(f4)
-                    #assumew we have the updated depth image
-                    xyz_image = compute_xyz(depth, self.listener.fx,self.listener.fy,self.listener.px,self.listener.py, h, w )
-                    # print(xyz_image.shape)
-                    xyz_array = xyz_image.reshape((-1, 3))
-                    # print(xyz_array.shape)
-                    xyz_base = np.matmul(RT_camera[:3, :3], xyz_array.T) + RT_camera[:3, 3].reshape(3, 1)
-                    xyz_base = xyz_base.reshape((-1, 3))
 
-                    xyz_base = xyz_base[(xyz_base[:,2]<0.5) & (xyz_base[:,2]>0.3)]
+                    # discard segmentation of valid depth
+                    non_z_depth = np.where(~(np.isnan(depth)))
+                    f3[non_z_depth] = 0
+
+                    # refine segmentation
+                    f3 = cv2.morphologyEx(f3, cv2.MORPH_CLOSE, self.kernel)
+
+                    # assign valid depths to the segments
+                    f3 = assign_depth_to_segments(f3, depth)
+
+                    # alternate for cvbridge - convert data into messages using ros-numpy
+                    f4 = ros_numpy.msgify(Img, f3, encoding='32FC1')
+                    self.segm_imgpub.publish(f4)
+
+                    # sequence of operations converting the segmented image into pc in laser frame of reference
+                    xyz_image = compute_xyz(f3, self.listener.fx,self.listener.fy,self.listener.px,self.listener.py, h, w )
+                    xyz_array = xyz_image.reshape((-1, 3))
+
+
+                    xyz_base = np.dot(RT_camera[:3,:3],xyz_array.T).T
+                    xyz_base +=RT_camera[:3,3]
+                    
+                    xyz_base = xyz_base[(xyz_base[:,2]<1) & (xyz_base[:,2]>0.3)]
                     xyz_base = xyz_base[0:xyz_base.size:30]
-                    # done with points in base frame
-                    # print(xyz_base.shape)
-                    xyz_laser = np.matmul(RT_laser[:3,:3], xyz_base.T) + RT_laser[:3,3].reshape(3,1)
-                    # xyz_laser = xyz_laser.T.reshape((h, w, 3))
-                    xyz_laser = xyz_laser.T.reshape((-1,3))
-                    ranges = self.listener.laserscan['ranges']
-                    ranges = ranges[:, np.newaxis]
-                    lidar_pc = self.unit_lidar_vector * ranges
+
+
+                    xyz_laser = np.dot(RT_laser[:3,:3],xyz_base.T).T
+                    xyz_laser +=RT_laser[:3,3]
                     xyz_laser[:,2] = 0
 
-                    # print(f"lidar pc {lidar_pc.shape}\n")
+                    # convert the laserscan readings into pointcloud in laser frame of reference
+                    ranges = self.listener.laserscan['ranges']
+                    ranges = ranges[:, np.newaxis]
+                    ranges[np.where(np.isinf(ranges))] = 100
+                    lidar_pc = self.unit_lidar_vector * ranges
+                    # print(lidar_pc)
 
+                    # combine laserscan pc and segmented pc and publish as new laserscan pc 
                     lidar_pc = np.concatenate((lidar_pc, xyz_laser), axis=0)
                     self.lidar_header.stamp = rospy.Time.now()
                     self.lidar_header.frame_id = "laser_link"
                     lidar_message = pc2.create_cloud_xyz32(self.lidar_header, lidar_pc)
                     self.listener.lidar_pub.publish(lidar_message)
 
-                    # done with points in laser frame
+
+                   
                     print(f"one iteration completed")
                     # rospy.sleep(1)
 
