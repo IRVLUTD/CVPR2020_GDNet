@@ -94,9 +94,7 @@ class ImageListener:
             #  print("callback")
              trans, rot = self.tf_listener.lookupTransform(self.base_frame, self.camera_frame, rospy.Time(0))
              RT_camera = ros_qt_to_rt(rot, trans)
-            #  print(f"cam trans {trans}, cam rotation {rot}\n")
              self.trans_l, self.rot_l = self.tf_listener.lookupTransform(self.base_frame, 'laser_link', rospy.Time(0))
-            #  print(f"laser trans {trans_l}, laser rotation {rot_l}\n")
              RT_laser = ros_qt_to_rt(self.rot_l, self.trans_l)
         except (tf2_ros.LookupException,
                 tf2_ros.ConnectivityException,
