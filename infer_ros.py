@@ -59,7 +59,11 @@ class Inference:
         self.to_test = {'GDD': gdd_testing_root}
 
         self.to_pil = transforms.ToPILImage()
-        self.net = GDNet()
+        ###############
+        # self.net = GDNet()
+        ###############
+        self.net = GDNet().cuda(self.device_ids[0])
+
         self.kernel = np.ones((3,3),np.uint8)
 
     def main(self):
@@ -82,9 +86,15 @@ class Inference:
                     # print(f"RT laser {RT_laser}")
                     rgb = Image.fromarray(rgb)
                     w,h = rgb.size
-                    img_var = Variable(self.img_transform(rgb).unsqueeze(0))
+                    ######################
+                    # img_var = Variable(self.img_transform(rgb).unsqueeze(0))
+                    ######################
+                    img_var = Variable(self.img_transform(rgb).unsqueeze(0)).cuda(self.device_ids[0])
                     f1, f2, f3 = self.net(img_var)
-                    f3 = f3.data.squeeze(0).cpu()
+                    ######################
+                    # f3 = f3.data.squeeze(0).cpu()
+                    ######################
+                    f3 = f3.data.squeeze(0)
                     f3 = np.array(transforms.Resize((h, w))(self.to_pil(f3)))
                     if self.args['crf']:
                         f3 = crf_refine(np.array(rgb.convert('RGB')), f3)
@@ -124,7 +134,7 @@ class Inference:
                     self.listener.lidar_pub.publish(lidar_message)
 
                     # done with points in laser frame
-                    # print(f"one iteration completed")
+                    print(f"one iteration completed")
                     # rospy.sleep(1)
 
 
