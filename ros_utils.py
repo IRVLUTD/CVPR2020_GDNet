@@ -228,26 +228,57 @@ def publish_grasps(publisher, frame_id, grasps, color_alpha, scores=None):
     # rospy.loginfo('markers length {}'.format(len(markers.markers)))
     publisher.publish(markers)
 
+
+
 def find_nearest_nonzero_idx_for_segment(a, segment):
-    """ Find the nearest nonzero element in array `a` for the whole segment. """
-    nonzero = np.argwhere(a)
+
+    # Filter out NaN values from the depth image
+    valid_depth_mask = ~np.isnan(a)
+    nonzero = np.argwhere(valid_depth_mask)
+    
+    if len(nonzero) == 0:
+        return None
+
     nonzero_tree = cKDTree(nonzero)
     segment_coords = np.argwhere(segment)
+
+    if len(segment_coords) == 0:
+        return None
+
     distance, location = nonzero_tree.query(segment_coords)
-    nearest = np.mean(nonzero[location], axis=0).astype(int)  # Average location
+    nearest = np.mean(nonzero[location], axis=0).astype(int) 
+
+    # Check if the nearest index is within the bounds of the image
+    if nearest[0] >= a.shape[0] or nearest[1] >= a.shape[1]:
+        return None
+
     return nearest
 
+
 def assign_depth_to_segments(bw_image, depth_image):
-    # Label each connected component (segment) in the bw image
     labeled_array, num_features = label(bw_image)
+    # print(f"Number of features (segments) found: {num_features}")
+
+    if num_features == 0:
+        # print("No segments found in the BW image.")
+        return depth_image
 
     new_depth_image = np.zeros_like(depth_image)
 
     for segment_num in range(1, num_features + 1):
         segment = labeled_array == segment_num
         nearest_black_idx = find_nearest_nonzero_idx_for_segment(depth_image, segment)
-        if depth_image[nearest_black_idx[0], nearest_black_idx[1]] != 0:
-            new_depth_image[segment] = depth_image[nearest_black_idx[0], nearest_black_idx[1]]
+
+        if nearest_black_idx is None:
+            continue
+
+        depth_value = depth_image[nearest_black_idx[0], nearest_black_idx[1]]
+        # print(f"{np.isnan(depth_value)}")
+        # print(f"Segment {segment_num}: Nearest depth index = {nearest_black_idx}, Depth value = {depth_value}")
+
+        if (not np.isnan(depth_value)):
+            new_depth_image[segment] = depth_value
 
     return new_depth_image
+
 
