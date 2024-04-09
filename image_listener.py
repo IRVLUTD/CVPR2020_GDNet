@@ -24,6 +24,7 @@ from ros_utils import ros_qt_to_rt, ros_pose_to_rt
 # from utils_segmentation import visualize_segmentation
 from grasp_utils import compute_xyz
 import ros_numpy
+from nav_msgs.msg import  Odometry
 
 lock = threading.Lock()
 
@@ -52,6 +53,8 @@ class ImageListener:
             self.target_frame = self.base_frame
             rospy.Subscriber("/base_scan", LaserScan, self.callback_laserscan)
             self.lidar_pub = rospy.Publisher("/lidar_pc", PointCloud2, queue_size=10)
+            rospy.Subscriber("/odom", Odometry, self.odometry_callback)
+            self.robot_pose = None
 
         elif camera == 'Realsense':
             # use RealSense camera
@@ -86,7 +89,42 @@ class ImageListener:
         ts = message_filters.ApproximateTimeSynchronizer([rgb_sub, depth_sub], queue_size, slop_seconds)
         ts.registerCallback(self.callback_rgbd)
 
+    def odometry_callback(self, odometry):
+        '''
+        -----------format-----------
+        odometry.pose.pose:
 
+            position: 
+                x: 1.7371902559859946
+                y: 0.16403314525998866
+                z: 0.0
+            orientation: 
+                x: 0.0
+                y: 0.0
+                z: 0.06300657223103008
+                w: 0.9980131120660168
+
+        odometry.twist.twist:
+
+            linear: 
+                x: 0.05
+                y: 0.04
+                z: 0.0
+            angular: 
+                x: 0.0
+                y: 0.0
+                z: 0.0
+
+        '''
+
+        self.robot_pose = ros_qt_to_rt([odometry.pose.pose.position.x,
+                                        odometry.pose.pose.position.y,
+                                        odometry.pose.pose.position.z],
+                                        [odometry.pose.pose.orientation.x,
+                                            odometry.pose.pose.orientation.y,
+                                            odometry.pose.pose.orientation.z,
+                                            odometry.pose.pose.orientation.w])
+    
     def callback_rgbd(self, rgb, depth):
     
         # get camera pose in base
@@ -177,6 +215,25 @@ class ImageListener:
         # xyz_base = np.matmul(RT_camera[:3, :3], xyz_array.T) + RT_camera[:3, 3].reshape(3, 1)
         # xyz_base = xyz_base.T.reshape((self.height, self.width, 3))
         return im_color, depth_image, RT_camera, RT_laser
+    
+    def get_data_to_save(self):
+
+        with lock:
+            if self.im is None:
+                return None, None, None, None, None, self.intrinsics
+            im_color = self.im.copy()
+            depth_image = self.depth.copy()
+            rgb_frame_id = self.rgb_frame_id
+            rgb_frame_stamp = self.rgb_frame_stamp
+            RT_camera = self.RT_camera.copy()
+            RT_laser = self.RT_laser.copy()
+            RT_robot = self.robot_pose.copy()
+
+        # xyz_image = compute_xyz(depth_image, self.fx, self.fy, self.px, self.py, self.height, self.width)
+        # xyz_array = xyz_image.reshape((-1, 3))
+        # xyz_base = np.matmul(RT_camera[:3, :3], xyz_array.T) + RT_camera[:3, 3].reshape(3, 1)
+        # xyz_base = xyz_base.T.reshape((self.height, self.width, 3))
+        return im_color, depth_image, RT_camera, RT_laser, RT_robot
 
 
 
